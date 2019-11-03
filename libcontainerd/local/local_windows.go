@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/Microsoft/hcsshim"
+	"github.com/Microsoft/hcsshim/osversion"
 	opengcs "github.com/Microsoft/opengcs/client"
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/cio"
@@ -152,7 +153,7 @@ func (c *client) Version(ctx context.Context) (containerd.Version, error) {
 //		"ImagePath": "C:\\\\control\\\\windowsfilter\\\\65bf96e5760a09edf1790cb229e2dfb2dbd0fcdc0bf7451bae099106bfbfea0c\\\\UtilityVM"
 //	},
 //}
-func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeOptions interface{}) error {
+func (c *client) Create(_ context.Context, id string, spec *specs.Spec, runtimeOptions interface{}, opts ...containerd.NewContainerOpts) error {
 	if ctr := c.getContainer(id); ctr != nil {
 		return errors.WithStack(errdefs.Conflict(errors.New("id already in use")))
 	}
@@ -238,7 +239,7 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 
 	if configuration.HvPartition {
 		// We don't currently support setting the utility VM image explicitly.
-		// TODO @swernli/jhowardmsft circa RS5, this may be re-locatable.
+		// TODO circa RS5, this may be re-locatable.
 		if spec.Windows.HyperV.UtilityVMPath != "" {
 			return errors.New("runtime does not support an explicit utility VM path for Hyper-V containers")
 		}
@@ -318,7 +319,7 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 		}
 	}
 	configuration.MappedDirectories = mds
-	if len(mps) > 0 && system.GetOSVersion().Build < 16299 { // RS3
+	if len(mps) > 0 && osversion.Build() < osversion.RS3 {
 		return errors.New("named pipe mounts are not supported on this version of Windows")
 	}
 	configuration.MappedPipes = mps
@@ -328,7 +329,7 @@ func (c *client) createWindows(id string, spec *specs.Spec, runtimeOptions inter
 		if configuration.HvPartition {
 			return errors.New("device assignment is not supported for HyperV containers")
 		}
-		if system.GetOSVersion().Build < 17763 { // RS5
+		if osversion.Build() < osversion.RS5 {
 			return errors.New("device assignment requires Windows builds RS5 (17763+) or later")
 		}
 		for _, d := range spec.Windows.Devices {
@@ -519,7 +520,7 @@ func (c *client) createLinux(id string, spec *specs.Spec, runtimeOptions interfa
 				ReadOnly:          readonly,
 			}
 			// If we are 1803/RS4+ enable LinuxMetadata support by default
-			if system.GetOSVersion().Build >= 17134 {
+			if osversion.Build() >= osversion.RS4 {
 				md.LinuxMetadata = true
 			}
 			mds = append(mds, md)

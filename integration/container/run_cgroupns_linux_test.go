@@ -9,7 +9,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/integration/internal/container"
 	"github.com/docker/docker/integration/internal/requirement"
-	"github.com/docker/docker/internal/test/daemon"
+	"github.com/docker/docker/testutil/daemon"
 	"gotest.tools/assert"
 	is "gotest.tools/assert/cmp"
 	"gotest.tools/poll"
@@ -68,7 +68,7 @@ func TestCgroupNamespacesRun(t *testing.T) {
 func TestCgroupNamespacesRunPrivileged(t *testing.T) {
 	skip.If(t, testEnv.DaemonInfo.OSType != "linux")
 	skip.If(t, testEnv.IsRemoteDaemon())
-	skip.If(t, requirement.CgroupNamespacesEnabled())
+	skip.If(t, !requirement.CgroupNamespacesEnabled())
 
 	// When the daemon defaults to private cgroup namespaces, privileged containers
 	// launched should not be inside their own cgroup namespaces

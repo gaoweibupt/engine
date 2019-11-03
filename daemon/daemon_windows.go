@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/Microsoft/hcsshim"
+	"github.com/Microsoft/hcsshim/osversion"
 	"github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/container"
@@ -31,6 +32,7 @@ import (
 )
 
 const (
+	isWindows            = true
 	defaultNetworkSpace  = "172.16.0.0/12"
 	platformSupported    = true
 	windowsMinCPUShares  = 1
@@ -125,8 +127,7 @@ func verifyPlatformContainerResources(resources *containertypes.Resources, isHyp
 		return warnings, fmt.Errorf("range of CPUs is from 0.01 to %d.00, as there are only %d CPUs available", sysinfo.NumCPU(), sysinfo.NumCPU())
 	}
 
-	osv := system.GetOSVersion()
-	if resources.NanoCPUs > 0 && isHyperv && osv.Build < 16175 {
+	if resources.NanoCPUs > 0 && isHyperv && osversion.Build() < osversion.RS3 {
 		leftoverNanoCPUs := resources.NanoCPUs % 1e9
 		if leftoverNanoCPUs != 0 && resources.NanoCPUs > 1e9 {
 			resources.NanoCPUs = ((resources.NanoCPUs + 1e9/2) / 1e9) * 1e9
@@ -195,14 +196,13 @@ func verifyPlatformContainerSettings(daemon *Daemon, hostConfig *containertypes.
 	if hostConfig == nil {
 		return nil, nil
 	}
-	osv := system.GetOSVersion()
 	hyperv := daemon.runAsHyperVContainer(hostConfig)
 
 	// On RS5, we allow (but don't strictly support) process isolation on Client SKUs.
 	// Prior to RS5, we don't allow process isolation on Client SKUs.
 	// @engine maintainers. This block should not be removed. It partially enforces licensing
-	// restrictions on Windows. Ping @jhowardmsft if there are concerns or PRs to change this.
-	if !hyperv && system.IsWindowsClient() && osv.Build < 17763 {
+	// restrictions on Windows. Ping Microsoft folks if there are concerns or PRs to change this.
+	if !hyperv && system.IsWindowsClient() && osversion.Build() < osversion.RS5 {
 		return warnings, fmt.Errorf("Windows client operating systems earlier than version 1809 can only run Hyper-V containers")
 	}
 
@@ -218,13 +218,13 @@ func verifyDaemonSettings(config *config.Config) error {
 
 // checkSystem validates platform-specific requirements
 func checkSystem() error {
-	// Validate the OS version. Note that docker.exe must be manifested for this
+	// Validate the OS version. Note that dockerd.exe must be manifested for this
 	// call to return the correct version.
 	osv := system.GetOSVersion()
 	if osv.MajorVersion < 10 {
 		return fmt.Errorf("This version of Windows does not support the docker daemon")
 	}
-	if osv.Build < 14393 {
+	if osversion.Build() < osversion.RS1 {
 		return fmt.Errorf("The docker daemon requires build 14393 or later of Windows Server 2016 or Windows 10")
 	}
 
@@ -424,26 +424,15 @@ func initBridgeDriver(controller libnetwork.NetworkController, config *config.Co
 		winlibnetwork.NetworkName: runconfig.DefaultDaemonNetworkMode().NetworkName(),
 	}
 
-	var ipamOption libnetwork.NetworkOption
-	var subnetPrefix string
-
+	subnetPrefix := defaultNetworkSpace
 	if config.BridgeConfig.FixedCIDR != "" {
 		subnetPrefix = config.BridgeConfig.FixedCIDR
-	} else {
-		// TP5 doesn't support properly detecting subnet
-		osv := system.GetOSVersion()
-		if osv.Build < 14360 {
-			subnetPrefix = defaultNetworkSpace
-		}
 	}
 
-	if subnetPrefix != "" {
-		ipamV4Conf := libnetwork.IpamConf{}
-		ipamV4Conf.PreferredPool = subnetPrefix
-		v4Conf := []*libnetwork.IpamConf{&ipamV4Conf}
-		v6Conf := []*libnetwork.IpamConf{}
-		ipamOption = libnetwork.NetworkOptionIpam("default", "", v4Conf, v6Conf, nil)
-	}
+	ipamV4Conf := libnetwork.IpamConf{PreferredPool: subnetPrefix}
+	v4Conf := []*libnetwork.IpamConf{&ipamV4Conf}
+	v6Conf := []*libnetwork.IpamConf{}
+	ipamOption := libnetwork.NetworkOptionIpam("default", "", v4Conf, v6Conf, nil)
 
 	_, err := controller.NewNetwork(string(runconfig.DefaultDaemonNetworkMode()), runconfig.DefaultDaemonNetworkMode().NetworkName(), "",
 		libnetwork.NetworkOptionGeneric(options.Generic{
@@ -601,10 +590,9 @@ func (daemon *Daemon) stats(c *container.Container) (*types.StatsJSON, error) {
 // daemon to run in. This is only applicable on Windows
 func (daemon *Daemon) setDefaultIsolation() error {
 	daemon.defaultIsolation = containertypes.Isolation("process")
-	osv := system.GetOSVersion()
 
 	// On client SKUs, default to Hyper-V. @engine maintainers. This
-	// should not be removed. Ping @jhowardmsft is there are PRs to
+	// should not be removed. Ping Microsoft folks is there are PRs to
 	// to change this.
 	if system.IsWindowsClient() {
 		daemon.defaultIsolation = containertypes.Isolation("hyperv")
@@ -625,10 +613,10 @@ func (daemon *Daemon) setDefaultIsolation() error {
 				daemon.defaultIsolation = containertypes.Isolation("hyperv")
 			}
 			if containertypes.Isolation(val).IsProcess() {
-				if system.IsWindowsClient() && osv.Build < 17763 {
+				if system.IsWindowsClient() && osversion.Build() < osversion.RS5 {
 					// On RS5, we allow (but don't strictly support) process isolation on Client SKUs.
 					// @engine maintainers. This block should not be removed. It partially enforces licensing
-					// restrictions on Windows. Ping @jhowardmsft if there are concerns or PRs to change this.
+					// restrictions on Windows. Ping Microsoft folks if there are concerns or PRs to change this.
 					return fmt.Errorf("Windows client operating systems earlier than version 1809 can only run Hyper-V containers")
 				}
 				daemon.defaultIsolation = containertypes.Isolation("process")

@@ -10,24 +10,24 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/internal/test/request"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/go-check/check"
+	"github.com/docker/docker/testutil/request"
 	"github.com/pkg/errors"
 	"golang.org/x/net/websocket"
 	"gotest.tools/assert"
 	is "gotest.tools/assert/cmp"
 )
 
-func (s *DockerSuite) TestGetContainersAttachWebsocket(c *check.C) {
+func (s *DockerSuite) TestGetContainersAttachWebsocket(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 	out, _ := dockerCmd(c, "run", "-dit", "busybox", "cat")
 
-	rwc, err := request.SockConn(time.Duration(10*time.Second), request.DaemonHost())
+	rwc, err := request.SockConn(10*time.Second, request.DaemonHost())
 	assert.NilError(c, err)
 
 	cleanedContainerID := strings.TrimSpace(out)
@@ -76,7 +76,7 @@ func (s *DockerSuite) TestGetContainersAttachWebsocket(c *check.C) {
 }
 
 // regression gh14320
-func (s *DockerSuite) TestPostContainersAttachContainerNotFound(c *check.C) {
+func (s *DockerSuite) TestPostContainersAttachContainerNotFound(c *testing.T) {
 	resp, _, err := request.Post("/containers/doesnotexist/attach")
 	assert.NilError(c, err)
 	// connection will shutdown, err should be "persistent connection closed"
@@ -87,7 +87,7 @@ func (s *DockerSuite) TestPostContainersAttachContainerNotFound(c *check.C) {
 	assert.Equal(c, string(content), expected)
 }
 
-func (s *DockerSuite) TestGetContainersWsAttachContainerNotFound(c *check.C) {
+func (s *DockerSuite) TestGetContainersWsAttachContainerNotFound(c *testing.T) {
 	res, body, err := request.Get("/containers/doesnotexist/attach/ws")
 	assert.Equal(c, res.StatusCode, http.StatusNotFound)
 	assert.NilError(c, err)
@@ -97,7 +97,7 @@ func (s *DockerSuite) TestGetContainersWsAttachContainerNotFound(c *check.C) {
 	assert.Assert(c, strings.Contains(getErrorMessage(c, b), expected))
 }
 
-func (s *DockerSuite) TestPostContainersAttach(c *check.C) {
+func (s *DockerSuite) TestPostContainersAttach(c *testing.T) {
 	testRequires(c, DaemonIsLinux)
 
 	expectSuccess := func(conn net.Conn, br *bufio.Reader, stream string, tty bool) {
@@ -142,12 +142,12 @@ func (s *DockerSuite) TestPostContainersAttach(c *check.C) {
 	cid, _ := dockerCmd(c, "run", "-di", "busybox", "cat")
 	cid = strings.TrimSpace(cid)
 	// Attach to the container's stdout stream.
-	conn, br, err := sockRequestHijack("POST", "/containers/"+cid+"/attach?stream=1&stdin=1&stdout=1", nil, "text/plain", request.DaemonHost())
+	conn, br, err := sockRequestHijack(http.MethodPost, "/containers/"+cid+"/attach?stream=1&stdin=1&stdout=1", nil, "text/plain", request.DaemonHost())
 	assert.NilError(c, err)
 	// Check if the data from stdout can be received.
 	expectSuccess(conn, br, "stdout", false)
 	// Attach to the container's stderr stream.
-	conn, br, err = sockRequestHijack("POST", "/containers/"+cid+"/attach?stream=1&stdin=1&stderr=1", nil, "text/plain", request.DaemonHost())
+	conn, br, err = sockRequestHijack(http.MethodPost, "/containers/"+cid+"/attach?stream=1&stdin=1&stderr=1", nil, "text/plain", request.DaemonHost())
 	assert.NilError(c, err)
 	// Since the container only emits stdout, attaching to stderr should return nothing.
 	expectTimeout(conn, br, "stdout")
@@ -155,10 +155,10 @@ func (s *DockerSuite) TestPostContainersAttach(c *check.C) {
 	// Test the similar functions of the stderr stream.
 	cid, _ = dockerCmd(c, "run", "-di", "busybox", "/bin/sh", "-c", "cat >&2")
 	cid = strings.TrimSpace(cid)
-	conn, br, err = sockRequestHijack("POST", "/containers/"+cid+"/attach?stream=1&stdin=1&stderr=1", nil, "text/plain", request.DaemonHost())
+	conn, br, err = sockRequestHijack(http.MethodPost, "/containers/"+cid+"/attach?stream=1&stdin=1&stderr=1", nil, "text/plain", request.DaemonHost())
 	assert.NilError(c, err)
 	expectSuccess(conn, br, "stderr", false)
-	conn, br, err = sockRequestHijack("POST", "/containers/"+cid+"/attach?stream=1&stdin=1&stdout=1", nil, "text/plain", request.DaemonHost())
+	conn, br, err = sockRequestHijack(http.MethodPost, "/containers/"+cid+"/attach?stream=1&stdin=1&stdout=1", nil, "text/plain", request.DaemonHost())
 	assert.NilError(c, err)
 	expectTimeout(conn, br, "stderr")
 
@@ -166,12 +166,12 @@ func (s *DockerSuite) TestPostContainersAttach(c *check.C) {
 	cid, _ = dockerCmd(c, "run", "-dit", "busybox", "/bin/sh", "-c", "cat >&2")
 	cid = strings.TrimSpace(cid)
 	// Attach to stdout only.
-	conn, br, err = sockRequestHijack("POST", "/containers/"+cid+"/attach?stream=1&stdin=1&stdout=1", nil, "text/plain", request.DaemonHost())
+	conn, br, err = sockRequestHijack(http.MethodPost, "/containers/"+cid+"/attach?stream=1&stdin=1&stdout=1", nil, "text/plain", request.DaemonHost())
 	assert.NilError(c, err)
 	expectSuccess(conn, br, "stdout", true)
 
 	// Attach without stdout stream.
-	conn, br, err = sockRequestHijack("POST", "/containers/"+cid+"/attach?stream=1&stdin=1&stderr=1", nil, "text/plain", request.DaemonHost())
+	conn, br, err = sockRequestHijack(http.MethodPost, "/containers/"+cid+"/attach?stream=1&stdin=1&stderr=1", nil, "text/plain", request.DaemonHost())
 	assert.NilError(c, err)
 	// Nothing should be received because both the stdout and stderr of the container will be
 	// sent to the client as stdout when tty is enabled.
@@ -237,7 +237,7 @@ func sockRequestHijack(method, endpoint string, data io.Reader, ct string, daemo
 // Deprecated: Use New instead of NewRequestClient
 // Deprecated: use request.Do (or Get, Delete, Post) instead
 func newRequestClient(method, endpoint string, data io.Reader, ct, daemon string, modifiers ...func(*http.Request)) (*http.Request, *httputil.ClientConn, error) {
-	c, err := request.SockConn(time.Duration(10*time.Second), daemon)
+	c, err := request.SockConn(10*time.Second, daemon)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not dial docker daemon: %v", err)
 	}

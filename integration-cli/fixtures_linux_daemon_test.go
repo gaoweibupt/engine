@@ -8,22 +8,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"testing"
 
-	"github.com/docker/docker/internal/test/fixtures/load"
-	"github.com/go-check/check"
+	"github.com/docker/docker/testutil/fixtures/load"
 	"gotest.tools/assert"
 )
 
-type testingT interface {
-	logT
-	Fatalf(string, ...interface{})
-}
-
-type logT interface {
-	Logf(string, ...interface{})
-}
-
-func ensureSyscallTest(c *check.C) {
+func ensureSyscallTest(c *testing.T) {
 	defer testEnv.ProtectImage(c, "syscall-test:latest")
 
 	// If the image already exists, there's nothing left to do.
@@ -61,7 +52,7 @@ func ensureSyscallTest(c *check.C) {
 	FROM debian:jessie
 	COPY . /usr/bin/
 	`)
-	err = ioutil.WriteFile(dockerFile, content, 600)
+	err = ioutil.WriteFile(dockerFile, content, 0600)
 	assert.NilError(c, err)
 
 	var buildArgs []string
@@ -73,7 +64,7 @@ func ensureSyscallTest(c *check.C) {
 	dockerCmd(c, buildArgs...)
 }
 
-func ensureSyscallTestBuild(c *check.C) {
+func ensureSyscallTestBuild(c *testing.T) {
 	err := load.FrozenImagesLinux(testEnv.APIClient(), "buildpack-deps:jessie")
 	assert.NilError(c, err)
 
@@ -86,7 +77,7 @@ func ensureSyscallTestBuild(c *check.C) {
 	dockerCmd(c, buildArgs...)
 }
 
-func ensureNNPTest(c *check.C) {
+func ensureNNPTest(c *testing.T) {
 	defer testEnv.ProtectImage(c, "nnp-test:latest")
 
 	// If the image already exists, there's nothing left to do.
@@ -116,7 +107,7 @@ func ensureNNPTest(c *check.C) {
 	COPY . /usr/bin
 	RUN chmod +s /usr/bin/nnp-test
 	`
-	err = ioutil.WriteFile(dockerfile, []byte(content), 600)
+	err = ioutil.WriteFile(dockerfile, []byte(content), 0600)
 	assert.NilError(c, err, "could not write Dockerfile for nnp-test image")
 
 	var buildArgs []string
@@ -128,7 +119,7 @@ func ensureNNPTest(c *check.C) {
 	dockerCmd(c, buildArgs...)
 }
 
-func ensureNNPTestBuild(c *check.C) {
+func ensureNNPTestBuild(c *testing.T) {
 	err := load.FrozenImagesLinux(testEnv.APIClient(), "buildpack-deps:jessie")
 	assert.NilError(c, err)
 

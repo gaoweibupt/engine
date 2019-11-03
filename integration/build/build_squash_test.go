@@ -11,9 +11,9 @@ import (
 	"github.com/docker/docker/api/types"
 	dclient "github.com/docker/docker/client"
 	"github.com/docker/docker/integration/internal/container"
-	"github.com/docker/docker/internal/test/daemon"
-	"github.com/docker/docker/internal/test/fakecontext"
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/docker/docker/testutil/daemon"
+	"github.com/docker/docker/testutil/fakecontext"
 	"gotest.tools/assert"
 	is "gotest.tools/assert/cmp"
 	"gotest.tools/skip"
@@ -26,7 +26,7 @@ func TestBuildSquashParent(t *testing.T) {
 	if !testEnv.DaemonInfo.ExperimentalBuild {
 		skip.If(t, testEnv.IsRemoteDaemon, "cannot run daemon when remote daemon")
 
-		d := daemon.New(t, daemon.WithExperimental)
+		d := daemon.New(t, daemon.WithExperimental())
 		d.StartWithBusybox(t)
 		defer d.Stop(t)
 		client = d.NewClientT(t)
@@ -100,7 +100,7 @@ func TestBuildSquashParent(t *testing.T) {
 	)
 	container.Run(ctx, t, client,
 		container.WithImage(name),
-		container.WithCmd("/bin/sh", "-c", `[ "$(echo $HELLO)" == "world" ]`),
+		container.WithCmd("/bin/sh", "-c", `[ "$(echo $HELLO)" = "world" ]`),
 	)
 
 	origHistory, err := client.ImageHistory(ctx, origID)

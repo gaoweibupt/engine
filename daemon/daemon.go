@@ -74,7 +74,9 @@ import (
 )
 
 // ContainersNamespace is the name of the namespace used for users containers
-const ContainersNamespace = "moby"
+const (
+	ContainersNamespace = "moby"
+)
 
 var (
 	errSystemNotSupported = errors.New("the Docker daemon is not supported on this platform")
@@ -173,8 +175,9 @@ func (daemon *Daemon) NewResolveOptionsFunc() resolver.ResolveOptionsFunc {
 			if uri, err := url.Parse(v); err == nil {
 				v = uri.Host
 			}
+			plainHTTP := true
 			m[v] = resolver.RegistryConf{
-				PlainHTTP: true,
+				PlainHTTP: &plainHTTP,
 			}
 		}
 		def := docker.ResolverOptions{
@@ -193,12 +196,16 @@ func (daemon *Daemon) NewResolveOptionsFunc() resolver.ResolveOptionsFunc {
 		}
 
 		if len(c.Mirrors) > 0 {
+			// TODO ResolverOptions.Host is deprecated; ResolverOptions.Hosts should be used
 			def.Host = func(string) (string, error) {
 				return c.Mirrors[rand.Intn(len(c.Mirrors))], nil
 			}
 		}
 
-		def.PlainHTTP = c.PlainHTTP
+		// TODO ResolverOptions.PlainHTTP is deprecated; ResolverOptions.Hosts should be used
+		if c.PlainHTTP != nil {
+			def.PlainHTTP = *c.PlainHTTP
+		}
 
 		return def
 	}
@@ -770,9 +777,9 @@ func NewDaemon(ctx context.Context, config *config.Config, pluginStore *plugin.S
 	if err != nil {
 		return nil, fmt.Errorf("Unable to get the full path to the TempDir (%s): %s", tmp, err)
 	}
-	if runtime.GOOS == "windows" {
+	if isWindows {
 		if _, err := os.Stat(realTmp); err != nil && os.IsNotExist(err) {
-			if err := system.MkdirAll(realTmp, 0700, ""); err != nil {
+			if err := system.MkdirAll(realTmp, 0700); err != nil {
 				return nil, fmt.Errorf("Unable to create the TempDir (%s): %s", realTmp, err)
 			}
 		}
@@ -834,15 +841,15 @@ func NewDaemon(ctx context.Context, config *config.Config, pluginStore *plugin.S
 	// Create the directory where we'll store the runtime scripts (i.e. in
 	// order to support runtimeArgs)
 	daemonRuntimes := filepath.Join(config.Root, "runtimes")
-	if err := system.MkdirAll(daemonRuntimes, 0700, ""); err != nil {
+	if err := system.MkdirAll(daemonRuntimes, 0700); err != nil {
 		return nil, err
 	}
 	if err := d.loadRuntimes(); err != nil {
 		return nil, err
 	}
 
-	if runtime.GOOS == "windows" {
-		if err := system.MkdirAll(filepath.Join(config.Root, "credentialspecs"), 0, ""); err != nil {
+	if isWindows {
+		if err := system.MkdirAll(filepath.Join(config.Root, "credentialspecs"), 0); err != nil {
 			return nil, err
 		}
 	}
@@ -855,7 +862,7 @@ func NewDaemon(ctx context.Context, config *config.Config, pluginStore *plugin.S
 	// initialization of the layerstore through driver priority order for example.
 	d.graphDrivers = make(map[string]string)
 	layerStores := make(map[string]layer.Store)
-	if runtime.GOOS == "windows" {
+	if isWindows {
 		d.graphDrivers[runtime.GOOS] = "windowsfilter"
 		if system.LCOWSupported() {
 			d.graphDrivers["linux"] = "lcow"
@@ -981,7 +988,7 @@ func NewDaemon(ctx context.Context, config *config.Config, pluginStore *plugin.S
 
 	trustDir := filepath.Join(config.Root, "trust")
 
-	if err := system.MkdirAll(trustDir, 0700, ""); err != nil {
+	if err := system.MkdirAll(trustDir, 0700); err != nil {
 		return nil, err
 	}
 
@@ -1048,6 +1055,7 @@ func NewDaemon(ctx context.Context, config *config.Config, pluginStore *plugin.S
 		LayerStores:               layerStores,
 		MaxConcurrentDownloads:    *config.MaxConcurrentDownloads,
 		MaxConcurrentUploads:      *config.MaxConcurrentUploads,
+		MaxDownloadAttempts:       *config.MaxDownloadAttempts,
 		ReferenceStore:            rs,
 		RegistryService:           registryService,
 		TrustKey:                  trustKey,

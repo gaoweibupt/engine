@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/oci/caps"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/mount"
+	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/rootless/specconv"
 	volumemounts "github.com/docker/docker/volume/mounts"
 	"github.com/opencontainers/runc/libcontainer/apparmor"
@@ -27,7 +28,7 @@ import (
 	"github.com/opencontainers/runc/libcontainer/devices"
 	rsystem "github.com/opencontainers/runc/libcontainer/system"
 	"github.com/opencontainers/runc/libcontainer/user"
-	"github.com/opencontainers/runtime-spec/specs-go"
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sys/unix"
@@ -66,13 +67,14 @@ func WithLibnetwork(daemon *Daemon, c *container.Container) coci.SpecOpts {
 		for _, ns := range s.Linux.Namespaces {
 			if ns.Type == "network" && ns.Path == "" && !c.Config.NetworkDisabled {
 				target := filepath.Join("/proc", strconv.Itoa(os.Getpid()), "exe")
+				shortNetCtlrID := stringid.TruncateID(daemon.netController.ID())
 				s.Hooks.Prestart = append(s.Hooks.Prestart, specs.Hook{
 					Path: target,
 					Args: []string{
 						"libnetwork-setkey",
 						"-exec-root=" + daemon.configStore.GetExecRoot(),
 						c.ID,
-						daemon.netController.ID(),
+						shortNetCtlrID,
 					},
 				})
 			}
@@ -111,12 +113,12 @@ func WithApparmor(c *container.Container) coci.SpecOpts {
 			if c.AppArmorProfile != "" {
 				appArmorProfile = c.AppArmorProfile
 			} else if c.HostConfig.Privileged {
-				appArmorProfile = "unconfined"
+				appArmorProfile = unconfinedAppArmorProfile
 			} else {
-				appArmorProfile = "docker-default"
+				appArmorProfile = defaultApparmorProfile
 			}
 
-			if appArmorProfile == "docker-default" {
+			if appArmorProfile == defaultApparmorProfile {
 				// Unattended upgrades and other fun services can unload AppArmor
 				// profiles inadvertently. Since we cannot store our profile in
 				// /etc/apparmor.d, nor can we practically add other ways of

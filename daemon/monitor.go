@@ -2,7 +2,6 @@ package daemon // import "github.com/docker/docker/daemon"
 
 import (
 	"context"
-	"runtime"
 	"strconv"
 	"time"
 
@@ -35,7 +34,7 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 	switch e {
 	case libcontainerdtypes.EventOOM:
 		// StateOOM is Linux specific and should never be hit on Windows
-		if runtime.GOOS == "windows" {
+		if isWindows {
 			return errors.New("received StateOOM from libcontainerd on Windows. This should never happen")
 		}
 
@@ -54,9 +53,9 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 			if err != nil {
 				logrus.WithError(err).Warnf("failed to delete container %s from containerd", c.ID)
 			}
-			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
-
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			c.StreamConfig.Wait(ctx)
+			cancel()
 			c.Reset(false)
 
 			exitStatus := container.ExitStatus{
@@ -125,8 +124,9 @@ func (daemon *Daemon) ProcessEvent(id string, e libcontainerdtypes.EventType, ei
 			execConfig.ExitCode = &ec
 			execConfig.Running = false
 
-			ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			execConfig.StreamConfig.Wait(ctx)
+			cancel()
 
 			if err := execConfig.CloseStreams(); err != nil {
 				logrus.Errorf("failed to cleanup exec %s streams: %s", c.ID, err)
@@ -201,15 +201,13 @@ func (daemon *Daemon) autoRemove(c *container.Container) {
 		return
 	}
 
-	var err error
-	if err = daemon.ContainerRm(c.ID, &types.ContainerRmConfig{ForceRemove: true, RemoveVolume: true}); err == nil {
+	err := daemon.ContainerRm(c.ID, &types.ContainerRmConfig{ForceRemove: true, RemoveVolume: true})
+	if err == nil {
 		return
 	}
 	if c := daemon.containers.Get(c.ID); c == nil {
 		return
 	}
 
-	if err != nil {
-		logrus.WithError(err).WithField("container", c.ID).Error("error removing container")
-	}
+	logrus.WithError(err).WithField("container", c.ID).Error("error removing container")
 }
